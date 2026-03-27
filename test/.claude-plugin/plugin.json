@@ -1,0 +1,6 @@
+{
+  "name": "test",
+  "version": "0.1.0",
+  "description": "Smoke-test plugin — validates that the rcskinner/claude-skills marketplace is wired up correctly.",
+  "skills": "./skills"
+}

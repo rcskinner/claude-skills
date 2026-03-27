@@ -1,0 +1,17 @@
+{
+  "name": "rcskinner-skills",
+  "owner": {
+    "name": "Ryan Skinner"
+  },
+  "metadata": {
+    "description": "Personal Claude Code skill marketplace — reusable domain bundles."
+  },
+  "plugins": [
+    {
+      "name": "test",
+      "source": "./test",
+      "description": "Smoke-test plugin to validate marketplace setup",
+      "version": "0.1.0"
+    }
+  ]
+}

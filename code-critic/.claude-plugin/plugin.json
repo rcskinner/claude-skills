@@ -1,0 +1,6 @@
+{
+  "name": "code-critic",
+  "version": "0.1.0",
+  "description": "Focused, opinionated code review skill.",
+  "skills": "./skills"
+}

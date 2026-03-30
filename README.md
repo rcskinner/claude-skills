@@ -13,52 +13,14 @@ A collection of Claude Code plugins for the `rcskinner-skills` marketplace.
 
 ### 1. Register the marketplace
 
-Add the following to `~/.claude/settings.json`:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "rcskinner-skills": {
-      "source": {
-        "source": "git",
-        "url": "https://github.com/rcskinner/claude-skills.git"
-      },
-      "autoUpdate": true
-    }
-  }
-}
+```bash
+/plugin marketplace add https://github.com/rcskinner/claude-skills.git
 ```
 
-### 2. Enable a plugin
+### 2. Install a plugin
 
-Add the plugin to `enabledPlugins` in the same file. For example, to enable the `test` plugin:
-
-```json
-{
-  "enabledPlugins": {
-    "test@rcskinner-skills": true
-  }
-}
-```
-
-A full `settings.json` with both plugins enabled looks like this:
-
-```json
-{
-  "enabledPlugins": {
-    "test@rcskinner-skills": true,
-    "code-critic@rcskinner-skills": true
-  },
-  "extraKnownMarketplaces": {
-    "rcskinner-skills": {
-      "source": {
-        "source": "git",
-        "url": "https://github.com/rcskinner/claude-skills.git"
-      },
-      "autoUpdate": true
-    }
-  }
-}
+```bash
+claude plugin install test@rcskinner-skills
 ```
 
 ### 3. Verify

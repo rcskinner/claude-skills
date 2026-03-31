@@ -12,6 +12,12 @@
       "source": "./test",
       "description": "Smoke-test plugin to validate marketplace setup",
       "version": "0.1.0"
+    },
+    {
+      "name": "code-critic",
+      "source": "./code-critic",
+      "description": "Focused, opinionated code review skill.",
+      "version": "0.1.0"
     }
   ]
 }

@@ -1,0 +1,6 @@
+{
+  "name": "dd-setup-guide",
+  "version": "0.1.0",
+  "description": "Generates a bespoke, documentation-verified Datadog setup and configuration guide for a specific customer environment.",
+  "skills": "./skills"
+}

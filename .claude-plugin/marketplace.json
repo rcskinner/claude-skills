@@ -18,6 +18,12 @@
       "source": "./code-critic",
       "description": "Focused, opinionated code review skill.",
       "version": "0.1.0"
+    },
+    {
+      "name": "dd-setup-guide",
+      "source": "./dd-setup-guide",
+      "description": "Generates a bespoke, documentation-verified Datadog setup and configuration guide for a specific customer environment.",
+      "version": "0.1.0"
     }
   ]
 }

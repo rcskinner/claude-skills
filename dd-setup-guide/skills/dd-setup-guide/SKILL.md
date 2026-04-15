@@ -49,6 +49,30 @@ One ask. Wait for the reply before proceeding.
 
 ---
 
+## Agent Tool Usage — Fetch Strategy
+
+All documentation fetches MUST use **synchronous (foreground) Agent calls**. Never use
+`run_in_background: true` for any doc fetch task — background agents stall silently for 10+ minutes
+with no error surfaced, blocking the entire workflow.
+
+When multiple independent fetches are needed at the same phase, issue them as **parallel foreground
+Agent calls in a single message** (multiple Agent tool use blocks). This gives full parallelism
+without the silent-stall risk:
+
+```
+# CORRECT — parallel foreground calls in one message
+Agent(fetch APM docs, foreground)
+Agent(fetch Infra docs, foreground)
+
+# WRONG — background agents for HTTP fetches
+Agent(fetch APM docs, run_in_background=true)   ← never do this
+```
+
+Each Agent call should fetch 3–5 URLs maximum. Batching too many URLs in one agent increases the
+chance of partial failures.
+
+---
+
 ## Phase 2 — Documentation Discovery
 
 For each selected product, discover what the documentation actually says is supported — do not rely on
@@ -144,6 +168,18 @@ Fetch at minimum:
 The markdown files use Hugo shortcodes like `{{< tabs >}}`, `{{< code-block >}}`, `{{< img >}}`.
 Read through these — they contain real content. Tab blocks typically show environment-specific variants
 (Helm vs Operator, Docker vs VM, etc.). Extract the relevant tab for the customer's environment.
+
+### Hugo partials — treat as UNVERIFIED
+
+Some content is served via Hugo partials, e.g.:
+```
+{{< partial name="trace_collection/python/supported_runtimes.html" >}}
+```
+These partials render dynamically and their source is NOT in the raw markdown. You cannot read this
+content from GitHub. When a doc page uses a partial for a table, version list, or configuration block:
+- Do NOT invent or guess the content of the partial
+- Mark the corresponding claim in the plan as `⚠️ UNVERIFIED` and add it to Open Questions
+- Note the partial name so it can be looked up manually
 
 ### Build internal notes
 
@@ -277,6 +313,15 @@ from the HTML comment and check the following against what the file actually say
 - Did the plan capture the right tab for the customer's environment? (e.g., Helm tab not Operator tab
   if the customer is using Helm)
 
+**Config syntax format (Helm vs Datadog Operator)**
+- YAML blocks in the docs often use `datadog:` as the top-level key — this is **Helm values syntax**
+  and is NOT valid in a `DatadogAgent` CRD manifest used with the Datadog Operator.
+- For every YAML config block in the plan, verify which install method it applies to. If the customer
+  is using Datadog Operator but the source doc only shows Helm syntax (`datadog:` prefix), flag it:
+  `> ⚠️ This config block is in Helm values syntax. Datadog Operator CRD equivalent not confirmed.`
+- Specifically watch for: `kubernetesResourcesLabelsAsTags`, `clusterAgent.useHostNetwork`,
+  `datadog.apm.instrumentation`, and any block prefixed with `datadog:` at the top level.
+
 ### What to do with findings
 
 For each issue found:
@@ -296,16 +341,131 @@ ambiguous:
 
 Report to the user:
 - Number of amendments made
-- Number of unverified items (if any), with a brief description of each
 - Final file path
 
-Then offer next steps:
+Then immediately proceed to Phase 6 if there are any unverified items. If there are none, proceed
+directly to Phase 7.
 
+---
+
+## Phase 6 — Unverified Item Resolution
+
+If any items were marked `⚠️ UNVERIFIED` during Phase 5, do not leave them for the user to find on
+their own. Work through them one at a time before declaring the guide complete.
+
+### Resolution flow
+
+For each unverified item, in the order they appear in the document:
+
+1. **Present the item clearly** to the user:
+
+   > **Unverified item (N of M):** [section name]
+   >
+   > The plan states: [exact claim from the document]
+   >
+   > This could not be verified because: [reason — e.g., content is in a Hugo partial, source URL
+   > returned 404, doc only shows Helm syntax and customer is using Operator, etc.]
+   >
+   > To resolve this, I can:
+   > - **Try an alternative source** — attempt to find the content at a different path or in a
+   >   related file (describe the path you'll try)
+   > - **Ask you directly** — if this is something you can answer from your environment (e.g.,
+   >   which Python version is running, which CNI is in use)
+   > - **Leave it flagged** — keep the `⚠️ UNVERIFIED` marker and Open Question as-is
+   >
+   > How would you like to proceed?
+
+2. **If the user chooses "try an alternative source"** — fetch it synchronously and report what you
+   find. If the content resolves the claim: update the plan in-place, remove the `⚠️ UNVERIFIED`
+   marker, add an entry to the Amendment Log, and move to the next item.
+
+3. **If the user provides the answer directly** — update the plan with their input, note it as
+   user-confirmed (not doc-sourced) with an inline comment:
+   `<!-- confirmed by customer: <their answer> -->`, remove the `⚠️ UNVERIFIED` marker, and move
+   to the next item.
+
+4. **If the user chooses "leave it flagged"** — leave the marker and Open Question unchanged and
+   move to the next item.
+
+After all unverified items have been addressed, report the final tally and proceed to Phase 7.
+
+---
+
+## Phase 7 — Standalone Configuration File Generation
+
+After the guide is written and verified, generate the standalone configuration files an engineer
+would actually deploy. These are separate from the guide — they are the real artefacts that get
+committed to a repo or applied to a cluster.
+
+### Step A — Identify required files
+
+Based on the products, install method, and environment scoped in Phases 1–3, determine which
+configuration files are needed. Common files include:
+
+| File | When needed |
+|------|-------------|
+| `datadog-agent.yaml` | Datadog Operator install — the `DatadogAgent` CRD manifest |
+| `datadog-values.yaml` | Helm install — values file passed to `helm install` |
+| `datadog.yaml` | Agent main config — used for non-containerised or VM-based installs |
+| `datadog-secret.yaml` | Kubernetes Secret manifest for the API key (optional, if not using `kubectl create secret`) |
+
+Do not generate files for install methods the customer is not using. If the customer chose Datadog
+Operator, generate `datadog-agent.yaml` — not `datadog-values.yaml`.
+
+Present the list to the user before generating:
+
+> I'll generate the following configuration files based on your setup:
+> - `datadog-agent.yaml` — DatadogAgent CRD for Datadog Operator
+> - `datadog-secret.yaml` — Kubernetes Secret for your API key
+>
+> Shall I proceed, or would you like to add or remove any files from this list?
+
+Wait for confirmation before writing files.
+
+### Step B — Generate each file
+
+For each file, write it to the working directory alongside the guide document. Use the naming
+convention: `<filename>` (no customer name prefix — these are deploy-ready files, not reference docs).
+
+**Rules for generated config files:**
+
+- **Complete and deploy-ready.** Every required field must be present. Do not use placeholder
+  comments like `# add your config here`. Use `<REPLACE_ME: description>` tokens for values the
+  customer must supply (API key, cluster name, site, namespace names).
+- **Source every value from the verified plan.** Do not add keys that weren't in the plan. If a
+  key appeared in the plan as `⚠️ UNVERIFIED`, omit it from the generated file and add a comment
+  noting it was excluded pending resolution.
+- **Correct syntax for the install method.** Datadog Operator files use the `DatadogAgent` CRD
+  schema (top-level `spec:`). Helm values files use the `datadog:` prefix. Never mix the two.
+- **Include a header comment** in every generated file:
+
+  ```yaml
+  # Generated by dd-setup-guide — <date>
+  # Guide: <guide filename>
+  # WARNING: Replace all <REPLACE_ME: ...> tokens before applying.
+  # Source: values derived from Datadog documentation as cited in the guide.
+  ```
+
+- **One file per write call.** Write each file separately so the user can review them individually.
+
+### Step C — Report and offer next steps
+
+After writing all files, list what was generated:
+
+> **Configuration files generated:**
+> - `datadog-agent.yaml` — DatadogAgent CRD, ready to apply after replacing tokens
+> - `datadog-secret.yaml` — Kubernetes Secret for API key
+>
+> **Tokens to replace before deploying:**
+> - `<REPLACE_ME: Datadog API key>` — in `datadog-secret.yaml`
+> - `<REPLACE_ME: cluster name>` — in `datadog-agent.yaml`
+> - `<REPLACE_ME: Datadog site, e.g. datadoghq.com>` — in `datadog-agent.yaml`
+>
 > **What would you like to do next?**
-> - **Review a specific section** in detail
+> - **Review a generated file** — I'll walk through each field
+> - **Fill in the tokens** — tell me the values and I'll update the files
 > - **Add another product** to this guide
-> - **Add a second environment** variant (e.g., staging config alongside prod)
-> - **Resolve unverified items** together — I'll walk through each one
+> - **Add a second environment** variant
 
 Wait for direction.
 
